@@ -4,14 +4,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/sufu777/JumpProxy/crypto"
 	"github.com/sufu777/JumpProxy/id"
 )
 
@@ -31,61 +28,74 @@ func main() {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	start := time.Now().UnixMilli()
-	reqBody, err := io.ReadAll(r.Body)
+	decoder := json.NewDecoder(r.Body)
+	var message = Message{}
+	err := decoder.Decode(&message)
 	if err != nil {
-		fmt.Printf("error read request body from %s", r.RemoteAddr)
 		return
 	}
-	reqBodyStr := string(reqBody)
-	startIdx := strings.Index(reqBodyStr, "<arg0 xmlns=\"\">")
-	endIdx := strings.Index(reqBodyStr, "</arg0>")
-	reqJson := reqBodyStr[startIdx+14 : endIdx]
-	println(reqJson)
-	message, err := crypto.DecryptBankMessage(reqJson)
-	if err != nil {
-		fmt.Printf("error decrypt message: %s", err.Error())
-		return
+	reqHeader := message.MessageHeader
+	var header = MessageHeader{
+		Sender:       reqHeader.Recver,
+		Recver:       reqHeader.Sender,
+		TxnTime:      reqHeader.TxnTime,
+		TxnDate:      reqHeader.TxnDate,
+		TradeSource:  "0",
+		Version:      reqHeader.Version,
+		Digest:       reqHeader.Digest,
+		BusinessCode: reqHeader.BusinessCode,
+		ReturnResult: "0000",
 	}
+	reqMap := message.MessageBody
 	var rspMap = map[string]string{}
 	rspMap["CODE"] = "00000000"
 	rspMap["MESSAGE"] = "success"
 	rspMap["AAC058"] = "01"
-	rspMap["AAC147"] = message.MessageBody["AAC147"]
-	rspMap["AAC003"] = message.MessageBody["AAC003"]
-	rspMap["AAC002"] = ""
+	rspMap["AAC147"] = reqMap["AAC147"]
+	rspMap["AAC003"] = reqMap["AAC003"]
+	rspMap["AAC002"] = reqMap["AAC002"]
 	rspMap["AAB301"] = "301122"
 	rspMap["AIC674"] = "05"
-	rspMap["AIC500"] = message.MessageBody["AAC147"] + "777P"
+	rspMap["AIC500"] = reqMap["AAC147"] + "777P"
 	rspMap["AIC501"] = ""
 	rspMap["AIC657"] = ""
 	rspMap["AIC539"] = ""
 	rspMap["AIC509"] = "12000"
-	rspMap["AAC341"] = message.MessageBody["AAZ341"]
+	rspMap["AAC341"] = reqMap["AAZ341"]
 	rspMap["AAZ345"] = NextAAZ345()
-
-	dst, err := crypto.EncodeMessage(*message, rspMap)
+	time.Sleep(time.Duration(delay) * time.Millisecond)
+	var response = map[string]any{}
+	response["MessageHeader"] = header
+	response["MessageBody"] = rspMap
+	marshal, err := json.Marshal(response)
 	if err != nil {
-		fmt.Printf("error encode message: " + err.Error())
 		return
 	}
-	bytes, err := json.Marshal(dst)
-	if err != nil {
-		fmt.Printf("error marshal message to json: " + err.Error())
-		return
-	}
-	end := time.Now().UnixMilli()
-	if end-start > delay {
-		time.Sleep(time.Duration(delay-end+start) * time.Millisecond)
-	}
-	w.Write(bytes)
+	w.Write(marshal)
 }
 
 var cc = "0000000"
 
-// 9开头的18位流水号
+// NextAAZ345 9开头的18位流水号
 func NextAAZ345() string {
 	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	suffix := strconv.FormatInt(int64(id.NextId()), 10)
+	suffix := strconv.FormatInt(id.NextId(), 10)
 	return "9" + instanceId + ts[len(ts)-10:] + cc[:6-len(suffix)] + suffix
+}
+
+type Message struct {
+	MessageBody   map[string]string `json:"MessageBody"`
+	MessageHeader MessageHeader     `json:"MessageHeader"`
+}
+
+type MessageHeader struct {
+	Sender       string `json:"Sender"`
+	TxnTime      string `json:"TransactionTime"`
+	TradeSource  string `json:"TradeSource"`
+	Version      string `json:"Version"`
+	Digest       string `json:"Digest"`
+	BusinessCode string `json:"BusinessCode"`
+	Recver       string `json:"Recver"`
+	ReturnResult string `json:"ReturnResult"`
+	TxnDate      string `json:"TransactionDate"`
 }
