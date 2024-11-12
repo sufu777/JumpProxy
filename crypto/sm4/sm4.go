@@ -2,9 +2,11 @@ package sm4
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
-	"github.com/tjfoc/gmsm/sm4"
 	"strconv"
+
+	"github.com/tjfoc/gmsm/sm4"
 )
 
 // Decrypt pkcs5填充 cbc模式的sm4
@@ -26,6 +28,23 @@ func Decrypt(key []byte, iv []byte, data []byte) (out []byte, err error) {
 		iv = inTmp
 	}
 	return pkcs5UnPadding(out), nil
+}
+
+// 使用 symmetricKey 和 IV变量解密Base6编码的数据
+func Base64Decrypt(key []byte, iv []byte, data string) (out []byte, err error) {
+	var dst []byte
+	base64.StdEncoding.Decode(dst, []byte(data))
+	return Decrypt(key, iv, dst)
+}
+
+func EncryptBase64(key []byte, iv []byte, data []byte) (string, error) {
+	encryptedBytes, err := Encrypt(key, iv, data)
+	if err != nil {
+		return "", errors.New("error encrypt data: " + err.Error())
+	}
+	var dstBytes []byte
+	base64.StdEncoding.Encode(dstBytes, encryptedBytes)
+	return string(dstBytes), nil
 }
 
 func Encrypt(key []byte, iv []byte, data []byte) (out []byte, err error) {
